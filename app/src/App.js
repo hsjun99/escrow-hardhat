@@ -2,57 +2,79 @@ import { ethers } from "ethers"
 import { useEffect, useState } from "react"
 import deploy from "./deploy"
 import Escrow from "./Escrow"
+import axios from "axios"
+import EscrowContract from "./artifacts/contracts/Escrow.sol/Escrow"
 
 const provider = new ethers.providers.Web3Provider(window.ethereum)
 
-export async function approve(escrowContract, signer) {
-    console.log(await signer.getAddress())
-    const approveTxn = await escrowContract.connect(signer).approve()
+export async function approve(escrowContract) {
+    const approveTxn = await escrowContract.connect(provider.getSigner()).approve()
     await approveTxn.wait()
 }
 
 function App() {
     const [escrows, setEscrows] = useState([])
-    const [account, setAccount] = useState()
-    const [signer, setSigner] = useState()
+    // const [account, setAccount] = useState()
+    // const [signer, setSigner] = useState()
 
     useEffect(() => {
-        async function getAccounts() {
-            const accounts = await provider.send("eth_requestAccounts", [])
+        // async function getAccounts() {
+        // const accounts = await provider.send("eth_requestAccounts", [])
 
-            setAccount(accounts[0])
-            setSigner(provider.getSigner())
+        // setAccount(accounts[0])
+        // setSigner(provider.getSigner())
+        // }
+        async function getContracts() {
+            const response = await axios.get(`http://localhost:4000/contracts`)
+            updateEscrows(response.data)
         }
 
-        getAccounts()
-    }, [account])
+        // getAccounts()
+        getContracts()
+    }, [])
+
+    function updateEscrows(data) {
+        data.forEach((item) => {
+            // console.log(new ethers.Contract(item.address, EscrowContract.abi, provider.getSigner()))
+            item.handleApprove = async () =>
+                await handleApprove(
+                    new ethers.Contract(item.address, EscrowContract.abi, provider.getSigner())
+                )
+        })
+        setEscrows(data)
+    }
+
+    async function handleApprove(escrowContract) {
+        escrowContract.on("Approved", () => {
+            document.getElementById(escrowContract.address).className = "complete"
+            document.getElementById(escrowContract.address).innerText = "✓ It's been approved!"
+        })
+
+        await approve(escrowContract)
+        const response = await axios.put(
+            `http://localhost:4000/contracts/${escrowContract.address}`
+        )
+        updateEscrows(response.data)
+    }
 
     async function newContract() {
         const beneficiary = document.getElementById("beneficiary").value
         const arbiter = document.getElementById("arbiter").value
-        // const value = ethers.BigNumber.from(document.getElementById("wei").value)
-
         const value = ethers.BigNumber.from(
             ethers.utils.parseUnits(document.getElementById("ether").value.toString(), "ether")
         )
-        const escrowContract = await deploy(signer, arbiter, beneficiary, value)
+        const escrowContract = await deploy(provider.getSigner(), arbiter, beneficiary, value)
 
         const escrow = {
             address: escrowContract.address,
             arbiter,
             beneficiary,
             value: value.toString(),
-            handleApprove: async () => {
-                escrowContract.on("Approved", () => {
-                    document.getElementById(escrowContract.address).className = "complete"
-                    document.getElementById(escrowContract.address).innerText =
-                        "✓ It's been approved!"
-                })
-
-                await approve(escrowContract, signer)
-            },
+            handleApprove: async () => await handleApprove(escrowContract),
+            isApproved: false,
         }
 
+        await axios.post("http://localhost:4000/contracts", escrow)
         setEscrows([...escrows, escrow])
     }
 
