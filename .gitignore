@@ -4,5 +4,4 @@ cache
 node_modules
 artifacts
 *.bck
-package-lock.json
 .env
