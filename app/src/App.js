@@ -7,6 +7,8 @@ import EscrowContract from "./artifacts/contracts/Escrow.sol/Escrow"
 
 const provider = new ethers.providers.Web3Provider(window.ethereum)
 
+const CONTRACT_STATUS = { PENDING: "PENDING", DEPLOYED: "DEPLOYED", REJECTED: "REJECTED" }
+
 export async function approve(escrowContract) {
     const approveTxn = await escrowContract.connect(provider.getSigner()).approve()
     await approveTxn.wait()
@@ -24,40 +26,17 @@ function App() {
         // setAccount(accounts[0])
         // setSigner(provider.getSigner())
         // }
-        async function getContracts() {
-            const response = await axios.get(`http://localhost:4000/contracts`)
-            updateEscrows(response.data)
-        }
 
         // getAccounts()
         getContracts()
     }, [])
 
-    function updateEscrows(data) {
-        data.forEach((item) => {
-            // console.log(new ethers.Contract(item.address, EscrowContract.abi, provider.getSigner()))
-            item.handleApprove = async () =>
-                await handleApprove(
-                    new ethers.Contract(item.address, EscrowContract.abi, provider.getSigner())
-                )
-        })
-        setEscrows(data)
-    }
-
-    async function handleApprove(escrowContract) {
-        escrowContract.on("Approved", () => {
-            document.getElementById(escrowContract.address).className = "complete"
-            document.getElementById(escrowContract.address).innerText = "✓ It's been approved!"
-        })
-
-        await approve(escrowContract)
-        const response = await axios.put(
-            `http://localhost:4000/contracts/${escrowContract.address}`
-        )
+    async function getContracts() {
+        const response = await axios.get(`http://localhost:4000/contracts`)
         updateEscrows(response.data)
     }
 
-    async function newContract() {
+    async function postContract() {
         const beneficiary = document.getElementById("beneficiary").value
         const arbiter = document.getElementById("arbiter").value
         const value = ethers.BigNumber.from(
@@ -72,10 +51,45 @@ function App() {
             value: value.toString(),
             handleApprove: async () => await handleApprove(escrowContract),
             isApproved: false,
+            status: CONTRACT_STATUS.PENDING,
         }
-
-        await axios.post("http://localhost:4000/contracts", escrow)
         setEscrows([...escrows, escrow])
+        await axios.post("http://localhost:4000/contracts", escrow)
+        await escrowContract.deployed()
+        escrow.status = CONTRACT_STATUS.DEPLOYED
+        setEscrows([...escrows, escrow])
+    }
+
+    async function updateEscrows(data) {
+        await Promise.all(
+            data.map(async (item) => {
+                const contract = new ethers.Contract(
+                    item.address,
+                    EscrowContract.abi,
+                    provider.getSigner()
+                )
+                item.handleApprove = async () => await handleApprove(contract)
+                try {
+                    const contractDeployed = await contract.deployed()
+                    item.status = CONTRACT_STATUS.DEPLOYED
+                    item.isApproved = await contractDeployed.isApproved()
+                } catch (e) {
+                    item.status = CONTRACT_STATUS.PENDING
+                    item.isApproved = false
+                }
+            })
+        )
+        setEscrows(data)
+    }
+
+    async function handleApprove(escrowContract) {
+        escrowContract.on("Approved", () => {
+            document.getElementById(escrowContract.address).className = "complete"
+            document.getElementById(escrowContract.address).innerText = "✓ It's been approved!"
+        })
+
+        await approve(escrowContract)
+        await getContracts()
     }
 
     return (
@@ -103,7 +117,7 @@ function App() {
                     onClick={(e) => {
                         e.preventDefault()
 
-                        newContract()
+                        postContract()
                     }}
                 >
                     Deploy

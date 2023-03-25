@@ -5,10 +5,15 @@ export default function Escrow({
     value,
     handleApprove,
     isApproved,
+    status,
 }) {
     return (
         <div className="existing-contract">
             <ul className="fields">
+                <li>
+                    <div> Address </div>
+                    <div> {address} </div>
+                </li>
                 <li>
                     <div> Arbiter </div>
                     <div> {arbiter} </div>
@@ -20,6 +25,10 @@ export default function Escrow({
                 <li>
                     <div> Value </div>
                     <div> {value} </div>
+                </li>
+                <li>
+                    <div> Status </div>
+                    <div> {status} </div>
                 </li>
                 <div
                     className={isApproved ? "complete" : "button"}
